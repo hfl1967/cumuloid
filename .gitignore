@@ -7,3 +7,7 @@ build/
 *.map
 *.lst
 .DS_Store
+QUICK_START.md
+.claude/
+.vscode/
+gitignore_clouds
