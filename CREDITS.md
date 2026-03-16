@@ -13,7 +13,7 @@ Clouds, designed and implemented by **Émilie Gillet**.
 This project would not exist without that work. Please consider supporting
 Mutable Instruments and the open-source hardware/software community.
 
-## What This Port Changed
+## What cumuloid Changed
 
 The Clouds DSP engine (`dsp/`, `stmlib/`, `resources.*`) is used completely
 unmodified from the original eurorack repository. The only changes made to

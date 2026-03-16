@@ -1,4 +1,4 @@
-// Mutable Instruments Clouds -> Daisy Petal port
+// cumuloid — Mutable Instruments Clouds engine on Daisy Petal
 // Control layout v3 — fixed control processing
 
 // ============================================================
@@ -20,7 +20,7 @@ namespace stmlib {
 #include "dsp/granular_processor.cpp"
 
 // ============================================================
-// Daisy + Clouds headers
+// Daisy headers
 // ============================================================
 #include "daisy_petal.h"
 #include "daisysp.h"
@@ -44,7 +44,7 @@ uint8_t DSY_SDRAM_BSS large_buffer[LARGE_BUFFER_SIZE];
 uint8_t DSY_SDRAM_BSS small_buffer[SMALL_BUFFER_SIZE];
 
 // ============================================================
-// Clouds processor
+// cumuloid processor (Clouds GranularProcessor)
 // ============================================================
 GranularProcessor processor;
 
@@ -55,7 +55,7 @@ daisysp::Svf hp_filter;
 daisysp::Svf lp_filter;
 
 // ============================================================
-// Output level (shift-controlled, not a Clouds parameter)
+// Output level (shift-controlled, not a Clouds DSP parameter)
 // ============================================================
 float output_level = 1.2f;
 
@@ -65,7 +65,7 @@ float output_level = 1.2f;
 int  mode      = 0;   // 0=Granular 1=Stretch 2=Looping 3=Spectral
 bool bypass    = false;
 bool freeze    = false;
-bool reverb_on = true;
+int  quality_level = 0;           // 0=16-bit stereo, 1=16-bit mono, 2=8-bit stereo, 3=8-bit mono
 bool deterministic_seed = false;  // false = randomized grain positions
 
 // ============================================================
@@ -184,6 +184,13 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                    AudioHandle::InterleavingOutputBuffer out,
                    size_t                                size)
 {
+    // Switch mapping:
+    // S1=SW_1 (FS left)   S2=SW_2 (FS right)  S3=SW_3 (FS middle)
+    // S4=SW_4 (FS tap)    S5=SW_5 (micro 1)   S6=SW_6 (micro 2)   S7=SW_7 (micro 3)
+    // Knob mapping:
+    // K1=KNOB_1 (position)  K2=KNOB_2 (size)    K3=KNOB_3 (texture)
+    // K4=KNOB_4 (density)   K5=KNOB_5 (pitch)   K6=KNOB_6 (blend)
+
     // Separate analog + digital processing
     hw.ProcessAnalogControls();
     hw.ProcessDigitalControls();
@@ -201,18 +208,18 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     shift_held = hw.encoder.Pressed();
 
     // ----------------------------------------------------------
-    // Read all knobs via initialized Parameter objects
+    // Read all knobs via initialized Parameter objects (K1-K6)
     // ----------------------------------------------------------
-    float raw1      = p_position.Process();
-    float raw2      = p_size.Process();
-    float raw3      = p_texture.Process();
-    float raw4      = p_density.Process();
-    // Expand pitch knob center region with cubic curve
+    float raw1      = p_position.Process();  // K1
+    float raw2      = p_size.Process();      // K2
+    float raw3      = p_texture.Process();   // K3
+    float raw4      = p_density.Process();   // K4
+    // K5 — expand pitch knob center region with cubic curve
     float raw_pitch_lin = p_pitch.Process();
     float raw_pitch_centered = (raw_pitch_lin - 0.5f) * 2.0f;  // -1..1
     float raw_pitch_curved = raw_pitch_centered * raw_pitch_centered * raw_pitch_centered;  // cubic
     float raw_pitch = (raw_pitch_curved * 0.5f) + 0.5f;  // back to 0..1
-    float raw6      = p_blend.Process();
+    float raw6      = p_blend.Process();     // K6
 
     // ----------------------------------------------------------
     // Shift mode — secondary parameters with catch behavior
@@ -239,26 +246,28 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // Normal knob assignments
     // ----------------------------------------------------------
 
-    // Position — catch-on-release after shift
+    // K1 — Position (catch-on-release after shift)
     params->position = raw1;
 
-    // Size — knob active unless tap tempo set; catch-on-release
+    // K2 — Size (knob active unless tap tempo set; catch-on-release)
+    // In Stretch mode (mode==1), cap size to 0.5 to avoid artifacts
+    if (mode == 1) raw2 = 0.1f + fminf(raw2, 0.4f) * 0.4f;
     if (tap_active) {
             params->size = tap_tempo_size;
         } else {
             params->size = raw2;
         }
 
-    // Texture and Density — always active
+    // K3, K4 — Texture and Density (always active)
     params->texture = raw3;
     params->density = raw4;
 
-    // Pitch — SW_7 (microswitch 3) up = snap, down = smooth
-    bool  pitch_snap = hw.switches[DaisyPetal::SW_7].Pressed();
+    // Pitch — S7 (microswitch 3) up = snap, down = smooth
+    bool  pitch_snap = hw.switches[DaisyPetal::SW_7].Pressed();  // S7
     float pitch_knob = pitch_snap ? SnapPitch(raw_pitch) : raw_pitch;
     params->pitch    = (pitch_knob - 0.5f) * 96.0f;  // -48 to +48 semitones
 
-    // Blend — catch-on-release after shift
+    // K6 — Blend / dry-wet (catch-on-release after shift)
     params->dry_wet = raw6;  // full range 0-100%
 
     // ----------------------------------------------------------
@@ -267,42 +276,43 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     output_level = shift_level;
     float dry_level = shift_dry;
 
-    // Reverb: FS2 toggle gates it, amount from shift+knob1
-    params->reverb = reverb_on ? shift_reverb : 0.0f;
-    if (reverb_on) output_level *= 1.3f;  // compensate for reverb attenuation
+    // Reverb: amount from shift+knob1
+    params->reverb = shift_reverb;
 
     // Feedback: always on at default level
     params->feedback  = shift_feedback * 0.5f;
 
-    // SW_6 (microswitch 2): deterministic seed toggle
+    // S6 (microswitch 2): deterministic seed toggle
     // Up = randomized grain positions, Down = locked/deterministic
-    deterministic_seed = hw.switches[DaisyPetal::SW_6].Pressed();
+    deterministic_seed = hw.switches[DaisyPetal::SW_6].Pressed();  // S6
     params->granular.use_deterministic_seed = deterministic_seed;
     params->granular.overlap = 0.5f;
 
-    // Stereo spread — SW_5 (microswitch 1)
-    params->stereo_spread = hw.switches[DaisyPetal::SW_5].Pressed() ? 1.0f : 0.0f;
+    // S5 (microswitch 1): stereo spread
+    params->stereo_spread = hw.switches[DaisyPetal::SW_5].Pressed() ? 1.0f : 0.0f;  // S5
 
     // ----------------------------------------------------------
     // Footswitches
     // ----------------------------------------------------------
 
-    // FS1 (SW_1) — Freeze toggle
-    if (hw.switches[DaisyPetal::SW_1].RisingEdge()) {
+    // S1 — Freeze toggle
+    if (hw.switches[DaisyPetal::SW_1].RisingEdge()) {  // S1
         freeze = !freeze;
         processor.set_freeze(freeze);
     }
 
-    // FS2 (SW_2) — Reverb toggle
-    if (hw.switches[DaisyPetal::SW_2].RisingEdge())
-        reverb_on = !reverb_on;
+    // S2 — Quality cycle: 0→1→2→3→0 (16-bit stereo → mono → 8-bit stereo → mono)
+    if (hw.switches[DaisyPetal::SW_2].RisingEdge()) {  // S2
+        quality_level = (quality_level + 1) % 4;
+        processor.set_quality(quality_level);
+    }
 
-    // FS3 (SW_3) — Bypass toggle
-    if (hw.switches[DaisyPetal::SW_3].RisingEdge())
+    // S3 — Bypass toggle
+    if (hw.switches[DaisyPetal::SW_3].RisingEdge())  // S3
         bypass = !bypass;
 
-    // FS4 (SW_4) — Tap tempo; hold 1s to clear
-    if (hw.switches[DaisyPetal::SW_4].RisingEdge()) {
+    // S4 — Tap tempo; hold 1s to clear
+    if (hw.switches[DaisyPetal::SW_4].RisingEdge()) {  // S4
         uint32_t now      = System::GetNow();
         uint32_t interval = now - last_tap_time;
         last_tap_time     = now;
@@ -312,7 +322,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
             blink_interval = interval;
         }
     }
-    if (hw.switches[DaisyPetal::SW_4].TimeHeldMs() > 1000) {
+    if (hw.switches[DaisyPetal::SW_4].TimeHeldMs() > 1000) {  // S4
         tap_active     = false;
         blink_interval = 0;
         blink_state    = false;
@@ -328,7 +338,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     }
 
     // ----------------------------------------------------------
-    // Convert float -> ShortFrame, run Clouds, convert back
+    // Convert float -> ShortFrame, process, convert back
     // ----------------------------------------------------------
     const size_t block_size = size / 2;
     ShortFrame input_frames[32];
@@ -348,9 +358,11 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     lp_filter.SetFreq(shift_lp_cutoff);
     lp_filter.SetRes(0.5f);
 
+    static const float kModeGain[4] = {1.1f, 1.2f, 2.0f, 1.2f};
+
     for (size_t i = 0; i < block_size; i++) {
-        float wetl = (output_frames[i].l / 32767.f) * output_level;
-        float wetr = (output_frames[i].r / 32767.f) * output_level;
+        float wetl = (output_frames[i].l / 32767.f) * output_level * kModeGain[mode];
+        float wetr = (output_frames[i].r / 32767.f) * output_level * kModeGain[mode];
 
         // High pass filter on wet signal
         hp_filter.Process(wetl);
@@ -378,7 +390,7 @@ int main(void)
     hw.Init();
     hw.SetAudioBlockSize(32);
 
-    // Init all 6 knob parameters
+    // Init all 6 knob parameters (K1-K6)
     p_position.Init(hw.knob[DaisyPetal::KNOB_1], 0.0f, 1.0f, Parameter::LINEAR);
     p_size.Init    (hw.knob[DaisyPetal::KNOB_2], 0.0f, 1.0f, Parameter::LINEAR);
     p_texture.Init (hw.knob[DaisyPetal::KNOB_3], 0.0f, 1.0f, Parameter::LINEAR);
@@ -410,11 +422,11 @@ int main(void)
     catch_k6.primary_exit_raw = init_blend;
     catch_k6.primary_valid    = true;
 
-    // Pre-set Clouds parameters from knob positions
+    // Pre-set parameters from knob positions
     // (processor.Init happens next, these get applied on first audio block)
     output_level = 1.0f;
-    
-    // Init Clouds processor
+
+    // Init cumuloid processor
     processor.Init(large_buffer, LARGE_BUFFER_SIZE,
                    small_buffer, SMALL_BUFFER_SIZE);
     processor.set_playback_mode(PLAYBACK_MODE_GRANULAR);
@@ -472,9 +484,11 @@ int main(void)
         }
 
         // Footswitch LEDs
-        hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_1, freeze      ? 1.0f : 0.0f);
-        hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_2, reverb_on   ? 1.0f : 0.0f);
-        hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_3, bypass      ? 0.0f : 1.0f);
+        // S2 LED brightness indicates quality level: 0=1.0, 1=0.66, 2=0.33, 3=0.1
+        const float kQualityBrightness[4] = {1.0f, 0.66f, 0.33f, 0.1f};
+        hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_1, freeze ? 1.0f : 0.0f);
+        hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_2, kQualityBrightness[quality_level]);
+        hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_3, bypass ? 0.0f : 1.0f);
         hw.SetFootswitchLed(DaisyPetal::FOOTSWITCH_LED_4, blink_state ? 1.0f : 0.0f);
 
         hw.UpdateLeds();

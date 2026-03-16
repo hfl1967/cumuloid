@@ -1,4 +1,4 @@
-# Mutable Instruments Clouds → Daisy Petal Port
+# cumuloid — Mutable Instruments Clouds on Daisy Petal
 
 A full port of Mutable Instruments Clouds granular processor to the Electro-Smith Daisy Petal guitar pedal platform.
 
@@ -6,7 +6,7 @@ A full port of Mutable Instruments Clouds granular processor to the Electro-Smit
 
 ## What This Is
 
-Clouds is a legendary granular audio processor originally designed for Eurorack modular synthesizers by Mutable Instruments (Émilie Gillet). This port brings the full Clouds DSP engine — including all four processing modes (Granular, Spectral Stretch, Looping Delay, and Oliverb/Spectral) — to the Daisy Petal, a guitar pedal platform built around the STM32H750 microcontroller.
+Clouds is a legendary granular audio processor originally designed for Eurorack modular synthesizers by Mutable Instruments (Émilie Gillet). cumuloid brings the full Clouds DSP engine — including all four processing modes (Granular, Spectral Stretch, Looping Delay, and Oliverb/Spectral) — to the Daisy Petal, a guitar pedal platform built around the STM32H750 microcontroller.
 
 ---
 
@@ -15,12 +15,12 @@ Clouds is a legendary granular audio processor originally designed for Eurorack 
 ### Knobs
 | Knob | Normal Mode | Shift Mode (encoder held) |
 |------|-------------|--------------------------|
-| 1 | Position | Reverb amount |
-| 2 | Size (grain length) | Feedback amount |
-| 3 | Texture | — |
-| 4 | Density | — |
-| 5 | Pitch (smooth or interval snap) | — |
-| 6 | Blend (dry/wet) | Output level |
+| K1 | Position | Reverb amount |
+| K2 | Size (grain length) | Feedback amount |
+| K3 | Texture | — |
+| K4 | Density | — |
+| K5 | Pitch (smooth or interval snap) | — |
+| K6 | Blend (dry/wet) | Output level |
 
 Shift mode uses **catch behavior**: a knob only takes effect once it passes the previously set value, preventing jumps. On shift release, the primary knob is similarly ignored until it passes its exit position.
 
@@ -31,21 +31,21 @@ Shift mode uses **catch behavior**: a knob only takes effect once it passes the 
 ### Microswitches
 | Switch | Up | Down |
 |--------|-----|------|
-| SW1 | Stereo spread on | Stereo spread off |
-| SW2 | Feedback on | Feedback off |
-| SW3 | Pitch snaps to intervals | Pitch is smooth/continuous |
+| S5 (SW_5) | Stereo spread on | Stereo spread off |
+| S6 (SW_6) | Randomized grain positions | Locked/deterministic grain positions |
+| S7 (SW_7) | Pitch snaps to intervals | Pitch is smooth/continuous |
 
 Pitch snap intervals: -24, -12, -7, 0, +7, +12, +24 semitones (2 octaves down to 2 octaves up, with octaves and fifths).
 
 ### Footswitches
 | Footswitch | Function | LED |
 |------------|----------|-----|
-| FS1 | Freeze (toggle) | Lit when frozen |
-| FS2 | Reverb (toggle) | Lit when reverb active |
-| FS3 | Bypass (toggle) | Lit when effect engaged |
-| FS4 | Tap tempo → grain size | Blinks at tapped rate |
+| S1 (SW_1) | Freeze (toggle) | Lit when frozen |
+| S2 (SW_2) | Quality cycle (16-bit stereo → mono → 8-bit stereo → mono) | Brightness shows level: full / 66% / 33% / 10% |
+| S3 (SW_3) | Bypass (toggle) | Lit when effect engaged |
+| S4 (SW_4) | Tap tempo → grain size | Blinks at tapped rate |
 
-**FS4 hold** (1 second): clears tap tempo and returns grain size to Knob 2.
+**S4 hold** (1 second): clears tap tempo and returns grain size to K2.
 
 ### Ring LEDs
 - Shows current processing mode by color:
@@ -106,14 +106,14 @@ Pitch snap intervals: -24, -12, -7, 0, +7, +12, +24 semitones (2 octaves down to
 
 1. **Clone or copy this project** into your DaisyExamples petal folder:
    ```bash
-   cp -r CloudsPetal ~/Documents/Daisy/DaisyExamples/petal/Clouds
-   cd ~/Documents/Daisy/DaisyExamples/petal/Clouds
+   cp -r cumuloid ~/Documents/Daisy/DaisyExamples/petal/cumuloid
+   cd ~/Documents/Daisy/DaisyExamples/petal/cumuloid
    ```
 
 2. **Copy Clouds DSP sources** from the eurorack repo:
    ```bash
    EURORACK=~/Documents/Daisy/eurorack
-   PROJECT=~/Documents/Daisy/DaisyExamples/petal/Clouds
+   PROJECT=~/Documents/Daisy/DaisyExamples/petal/cumuloid
 
    # Create directories
    mkdir -p $PROJECT/dsp/fx $PROJECT/dsp/pvoc
@@ -155,7 +155,7 @@ Pitch snap intervals: -24, -12, -7, 0, +7, +12, +24 semitones (2 octaves down to
 ### Build
 
 ```bash
-cd ~/Documents/Daisy/DaisyExamples/petal/Clouds
+cd ~/Documents/Daisy/DaisyExamples/petal/cumuloid
 make
 ```
 
@@ -182,7 +182,7 @@ This only needs to be done once per Daisy Seed. It enables QSPI flash programmin
      -d ,0483:df11
    ```
 
-#### Flash the Clouds firmware
+#### Flash the cumuloid firmware
 
 1. **Double-tap the RESET button** quickly — the LEDs will blink briefly to confirm bootloader mode
 2. Run:
@@ -204,8 +204,8 @@ The pedal boots automatically after flashing.
 ## Project Structure
 
 ```
-Clouds/
-├── Clouds.cpp              # Main file — all hardware abstraction + audio callback
+cumuloid/
+├── cumuloid.cpp            # Main file — all hardware abstraction + audio callback
 ├── Makefile                # Build config (APP_TYPE = BOOT_QSPI)
 ├── resources.cpp           # Clouds lookup tables (from eurorack repo)
 ├── resources.h             # Clouds resources header
@@ -257,7 +257,7 @@ The Daisy Seed has 128KB of internal flash, 64MB of SDRAM, and 8MB of QSPI flash
 - **SDRAM**: grain buffers (118KB large + 64KB small = ~182KB)
 
 ### Single Translation Unit Build
-Rather than fighting with the Daisy build system's handling of subdirectory `.cpp` files, all Clouds DSP sources are `#include`d directly into `Clouds.cpp`. This is a standard embedded technique that also allows the compiler to optimize across all DSP code in a single pass.
+Rather than fighting with the Daisy build system's handling of subdirectory `.cpp` files, all Clouds DSP sources are `#include`d directly into `cumuloid.cpp`. This is a standard embedded technique that also allows the compiler to optimize across all DSP code in a single pass.
 
 ### Clouds Internal Sample Rate
 Clouds runs its DSP internally at 32kHz (or 16kHz in lo-fi mode), with a built-in sample rate converter. The Daisy runs at 48kHz. The SRC in Clouds handles the conversion automatically.
@@ -267,4 +267,4 @@ Clouds runs its DSP internally at 32kHz (or 16kHz in lo-fi mode), with a built-i
 ## License
 
 Clouds DSP engine: Copyright 2014 Émilie Gillet, licensed CC BY-SA 3.0
-Daisy port: see LICENSE file
+cumuloid port: see LICENSE file

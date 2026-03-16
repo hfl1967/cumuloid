@@ -1,11 +1,11 @@
 # Project Name
-TARGET = Clouds
+TARGET = cumuloid
 
 # Boot type - puts entire program in QSPI flash
 APP_TYPE = BOOT_QSPI
 
 # Sources
-CPP_SOURCES = Clouds.cpp
+CPP_SOURCES = cumuloid.cpp
 
 # Includes
 C_INCLUDES += -I. -I..

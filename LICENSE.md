@@ -1,8 +1,8 @@
 # License
 
-## Daisy Petal Port
+## cumuloid — Daisy Petal Port
 
-This port — all code in `Clouds.cpp` and the project build system (`Makefile`,
+This port — all code in `cumuloid.cpp` and the project build system (`Makefile`,
 `STM32H750IB_flash.lds`) — is original work by the repository author and is
 released under the Creative Commons Attribution-ShareAlike 3.0 Unported License
 (CC BY-SA 3.0), to match the license of the upstream Mutable Instruments code
