@@ -63,6 +63,8 @@ float output_level = 1.2f;
 // Mode state
 // ============================================================
 int  mode      = 0;   // 0=Granular 1=Stretch 2=Looping 3=Spectral
+bool force_stretch_reset = false;  // set on entry to Stretch mode to flush WSOLA buffers
+
 bool bypass    = false;
 bool freeze    = false;
 int  quality_level = 0;           // 0=16-bit stereo, 1=16-bit mono, 2=8-bit stereo, 3=8-bit mono
@@ -204,6 +206,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     if (enc_inc != 0) {
         mode = (mode + enc_inc + PLAYBACK_MODE_LAST) % PLAYBACK_MODE_LAST;
         processor.set_playback_mode(static_cast<PlaybackMode>(mode));
+        if (mode == 1) force_stretch_reset = true;
     }
     shift_held = hw.encoder.Pressed();
 
@@ -250,8 +253,10 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     params->position = raw1;
 
     // K2 — Size (knob active unless tap tempo set; catch-on-release)
-    // In Stretch mode (mode==1), cap size to 0.5 to avoid artifacts
-    if (mode == 1) raw2 = 0.1f + fminf(raw2, 0.4f) * 0.4f;
+    // In Stretch mode (mode==1), widen range but keep below 0.75 for WSOLA stability
+    // if (mode == 1) raw2 = raw2 * 0.7f + 0.05f;
+    // In Spectral mode (mode==3), cap size to 0.6 to prevent CPU overload
+    if (mode == 3) raw2 = fminf(raw2, 0.6f);
     if (tap_active) {
             params->size = tap_tempo_size;
         } else {
@@ -261,14 +266,16 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // K3, K4 — Texture and Density (always active)
     params->texture = raw3;
     params->density = raw4;
+    params->gate    = true;          // always open — no physical gate input
+    params->trigger = (mode == 1);  // trigger active in Stretch mode only
 
     // Pitch — S7 (microswitch 3) up = snap, down = smooth
     bool  pitch_snap = hw.switches[DaisyPetal::SW_7].Pressed();  // S7
     float pitch_knob = pitch_snap ? SnapPitch(raw_pitch) : raw_pitch;
     params->pitch    = (pitch_knob - 0.5f) * 96.0f;  // -48 to +48 semitones
 
-    // K6 — Blend / dry-wet (catch-on-release after shift)
-    params->dry_wet = raw6;  // full range 0-100%
+    // K6 — Blend handled externally; Clouds internal mix always fully wet
+    params->dry_wet = 1.0f;
 
     // ----------------------------------------------------------
     // Apply shift-controlled parameters
@@ -349,8 +356,22 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         input_frames[i].r = (int16_t)(in[i * 2 + 1] * 32767.f);
     }
 
+    // On entry to Stretch mode, toggle num_channels 2→1→2 to trigger reset_buffers_
+    // inside GranularProcessor, clearing stale WSOLA state before the first block.
+    if (force_stretch_reset) {
+        processor.set_num_channels(1);
+        processor.set_num_channels(2);
+        force_stretch_reset = false;
+    }
     processor.Prepare();
     processor.Process(input_frames, output_frames, block_size);
+
+    // DEBUG: stretch passthrough test
+    if (mode == 1) {
+        for (size_t i = 0; i < block_size; i++) {
+            output_frames[i] = input_frames[i];
+        }
+    }
 
     // Update HP filter cutoff
     hp_filter.SetFreq(shift_hp_cutoff);
@@ -363,22 +384,29 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     for (size_t i = 0; i < block_size; i++) {
         float wetl = (output_frames[i].l / 32767.f) * output_level * kModeGain[mode];
         float wetr = (output_frames[i].r / 32767.f) * output_level * kModeGain[mode];
+        float dryl = in[i * 2];
+        float dryr = in[i * 2 + 1];
 
-        // High pass filter on wet signal
+        // HP filter on wet only
         hp_filter.Process(wetl);
         wetl = hp_filter.High();
         hp_filter.Process(wetr);
         wetr = hp_filter.High();
 
-        // Low pass filter on wet signal
+        // LP filter on wet only
         lp_filter.Process(wetl);
         wetl = lp_filter.Low();
         lp_filter.Process(wetr);
         wetr = lp_filter.Low();
 
-        // Soft clip to prevent first repeat from exceeding unity
-        out[i * 2]     = tanhf(wetl * 0.6f) * 1.45f;
-        out[i * 2 + 1] = tanhf(wetr * 0.6f) * 1.45f;
+        // Soft clip wet signal
+        wetl = tanhf(wetl * 0.6f) * 1.45f;
+        wetr = tanhf(wetr * 0.6f) * 1.45f;
+
+        // Manual dry/wet blend (raw6 clamped to guard against ADC noise at extremes)
+        float blend = fclamp(raw6, 0.0f, 1.0f);
+        out[i * 2]     = dryl * (1.0f - blend) + wetl * blend;
+        out[i * 2 + 1] = dryr * (1.0f - blend) + wetr * blend;
     }
 }
 
@@ -389,6 +417,7 @@ int main(void)
 {
     hw.Init();
     hw.SetAudioBlockSize(32);
+    hw.SetAudioSampleRate(SaiHandle::Config::SampleRate::SAI_32KHZ);
 
     // Init all 6 knob parameters (K1-K6)
     p_position.Init(hw.knob[DaisyPetal::KNOB_1], 0.0f, 1.0f, Parameter::LINEAR);
