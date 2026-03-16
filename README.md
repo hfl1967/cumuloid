@@ -1,270 +1,350 @@
-# cumuloid — Mutable Instruments Clouds on Daisy Petal
+# cumuloid
 
-A full port of Mutable Instruments Clouds granular processor to the Electro-Smith Daisy Petal guitar pedal platform.
+A port of the Mutable Instruments Clouds granular audio processor to the Electro-Smith Daisy Petal guitar pedal platform.
+
+Clouds is a legendary granular synthesizer/processor originally designed for Eurorack modular synthesizers by Émilie Gillet. This port brings the full Clouds DSP engine to the Daisy Petal, a guitar pedal platform built around the STM32H750 microcontroller.
 
 ---
 
-## What This Is
+## What it sounds like
 
-Clouds is a legendary granular audio processor originally designed for Eurorack modular synthesizers by Mutable Instruments (Émilie Gillet). cumuloid brings the full Clouds DSP engine — including all four processing modes (Granular, Spectral Stretch, Looping Delay, and Oliverb/Spectral) — to the Daisy Petal, a guitar pedal platform built around the STM32H750 microcontroller.
+cumuloid continuously records incoming audio into a buffer and plays back overlapping fragments (grains) of that recording. The result ranges from subtle shimmer and reverb-like textures to dramatic pitch-shifted clouds of sound, time-stretched drones, and alien spectral processing. It works beautifully with guitar, synth, voice, or any audio source.
+
+---
+
+## Known issues
+
+- **Cyan (Stretch) mode** — wet signal is currently silent. Dry signal is audible but affected by the DSP. Under active investigation. See [GitHub Issues](https://github.com/hfl1967/cumuloid/issues) for details.
 
 ---
 
 ## Controls
 
 ### Knobs
-| Knob | Normal Mode | Shift Mode (encoder held) |
-|------|-------------|--------------------------|
-| K1 | Position | Reverb amount |
-| K2 | Size (grain length) | Feedback amount |
-| K3 | Texture | — |
-| K4 | Density | — |
-| K5 | Pitch (smooth or interval snap) | — |
-| K6 | Blend (dry/wet) | Output level |
 
-Shift mode uses **catch behavior**: a knob only takes effect once it passes the previously set value, preventing jumps. On shift release, the primary knob is similarly ignored until it passes its exit position.
+| Knob | Function |
+|------|----------|
+| K1 | Position — where in the buffer grains are read from |
+| K2 | Size — grain length (also set by tap tempo) |
+| K3 | Texture — grain envelope shape |
+| K4 | Density — how many grains per second |
+| K5 | Pitch — grain playback pitch (cubic curve, noon = unity) |
+| K6 | Blend — dry/wet mix |
+
+> **Note on Density:** At noon, no grains are generated. Turn clockwise for random grain timing, counterclockwise for regular/constant timing. Keep above or below noon for sound output.
+
+> **Note on Pitch:** Pitch shift affects perceived volume — higher pitch = louder output. This is normal Clouds behavior.
 
 ### Encoder
-- **Turn** → cycle through the 4 processing modes
-- **Hold** → enter shift mode (enables secondary knob functions above)
 
-### Microswitches
-| Switch | Up | Down |
-|--------|-----|------|
-| S5 (SW_5) | Stereo spread on | Stereo spread off |
-| S6 (SW_6) | Randomized grain positions | Locked/deterministic grain positions |
-| S7 (SW_7) | Pitch snaps to intervals | Pitch is smooth/continuous |
+| Action | Function |
+|--------|----------|
+| Turn | Cycle through processing modes |
+| Hold | Shift mode — enables secondary knob functions (see below) |
 
-Pitch snap intervals: -24, -12, -7, 0, +7, +12, +24 semitones (2 octaves down to 2 octaves up, with octaves and fifths).
+### Shift mode (hold encoder)
+
+While holding the encoder, knobs control secondary parameters. The ring LEDs dim to 30% to indicate shift mode is active. Knobs use **catch behavior** — a knob only takes effect once it physically passes its previously set value, preventing jumps.
+
+| Knob | Secondary Function |
+|------|-------------------|
+| K1 | Reverb amount |
+| K2 | Feedback amount |
+| K3 | Low pass filter cutoff (1kHz–12kHz, wet signal only) |
+| K4 | High pass filter cutoff (40Hz–400Hz, wet signal only) |
+| K5 | Dry signal level |
+| K6 | Overall output level |
 
 ### Footswitches
-| Footswitch | Function | LED |
-|------------|----------|-----|
-| S1 (SW_1) | Freeze (toggle) | Lit when frozen |
-| S2 (SW_2) | Quality cycle (16-bit stereo → mono → 8-bit stereo → mono) | Brightness shows level: full / 66% / 33% / 10% |
-| S3 (SW_3) | Bypass (toggle) | Lit when effect engaged |
-| S4 (SW_4) | Tap tempo → grain size | Blinks at tapped rate |
 
-**S4 hold** (1 second): clears tap tempo and returns grain size to K2.
+| Switch | Function | LED |
+|--------|----------|-----|
+| S1 | Freeze — hold current buffer, grains recirculate | Lit when frozen |
+| S2 | Quality — cycle through 4 audio quality settings | Dims each step |
+| S3 | Bypass — true 1:1 bypass | Lit when effect is engaged |
+| S4 | Tap tempo — sets grain size from tap interval | Blinks at tapped rate |
+
+> Hold S4 for 1 second to clear tap tempo and return grain size to K2.
+
+**Quality settings (S2 cycles through):**
+1. 16-bit stereo (full quality) — LED full brightness
+2. 16-bit mono — LED at 66%
+3. 8-bit stereo — LED at 33%
+4. 8-bit mono lo-fi (µ-law, Cassette/Fairlight character) — LED dim
+
+### Microswitches
+
+| Switch | Up | Down |
+|--------|-----|------|
+| S5 | Unassigned (reserved) | Unassigned |
+| S6 | Randomize grain positions | Locked/deterministic grains |
+| S7 | Pitch snaps to musical intervals | Smooth continuous pitch |
+
+**Pitch snap intervals (S7 up):** -2 oct, -1 oct, -5th, unison, +5th, +1 oct, +2 oct
 
 ### Ring LEDs
-- Shows current processing mode by color:
-  - **Amber** = Granular
-  - **Cyan** = Stretch
-  - **Green** = Looping
-  - **Purple** = Spectral
-- **Blue tint** when freeze is active
-- **Dimmed to 30%** when shift mode is held
+
+| Color | Mode | Notes |
+|-------|------|-------|
+| Amber | Granular | Classic granular synthesis |
+| Cyan | Stretch | Time stretching via WSOLA (wet signal issue — see known issues) |
+| Green | Looping | Looping delay with granular control |
+| Purple | Spectral | FFT-based phase vocoder |
+
+- **Blue tint** on the active mode LED = freeze is active
+- **Dimmed to 30%** = shift mode is held
 
 ---
 
-## Processing Modes (cycle with encoder)
+## Setting up from scratch
 
-1. **Granular** — classic granular synthesis. Grains of audio scattered across a buffer.
-2. **Stretch** — time stretching / pitch shifting via WSOLA.
-3. **Looping Delay** — looping sample player with granular control.
-4. **Spectral (Oliverb)** — FFT-based spectral processing, phase vocoder effects.
+### What you need
 
----
-
-## Build & Flash Instructions
-
-### Prerequisites
-
-1. **ARM GCC toolchain** (arm-none-eabi-gcc 10.3+)
-   - Mac: install via [Homebrew](https://brew.sh): `brew install --cask gcc-arm-embedded`
-   - Or download from [ARM developer site](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain)
-
-2. **libDaisy + DaisySP + DaisyExamples**
-   ```bash
-   cd ~/Documents/Daisy
-   git clone https://github.com/electro-smith/DaisyExamples.git
-   cd DaisyExamples
-   git submodule update --init --recursive
-   ```
-   Build libDaisy and DaisySP:
-   ```bash
-   cd libDaisy && make && cd ..
-   cd DaisySP && make && cd ..
-   ```
-
-3. **dfu-util**
-   - Mac: `brew install dfu-util`
-   - Linux: `sudo apt install dfu-util`
-
-4. **Mutable Instruments eurorack repo**
-   ```bash
-   cd ~/Documents/Daisy
-   git clone https://github.com/pichenettes/eurorack.git
-   cd eurorack
-   git submodule update --init --recursive
-   ```
+- Electro-Smith Daisy Petal
+- Mac or PC
+- USB cable (data cable, not charge-only)
+- [Visual Studio Code](https://code.visualstudio.com)
+- Basic comfort with a terminal/command line
 
 ---
 
-### Project Setup
+### Step 1 — Install VS Code and Claude Code
 
-1. **Clone or copy this project** into your DaisyExamples petal folder:
-   ```bash
-   cp -r cumuloid ~/Documents/Daisy/DaisyExamples/petal/cumuloid
-   cd ~/Documents/Daisy/DaisyExamples/petal/cumuloid
-   ```
-
-2. **Copy Clouds DSP sources** from the eurorack repo:
-   ```bash
-   EURORACK=~/Documents/Daisy/eurorack
-   PROJECT=~/Documents/Daisy/DaisyExamples/petal/cumuloid
-
-   # Create directories
-   mkdir -p $PROJECT/dsp/fx $PROJECT/dsp/pvoc
-   mkdir -p $PROJECT/stmlib/dsp $PROJECT/stmlib/utils $PROJECT/stmlib/fft
-
-   # Clouds DSP
-   cp $EURORACK/clouds/dsp/*.h $PROJECT/dsp/
-   cp $EURORACK/clouds/dsp/*.cc $PROJECT/dsp/
-   cp $EURORACK/clouds/dsp/fx/*.h $PROJECT/dsp/fx/
-   cp $EURORACK/clouds/dsp/pvoc/*.h $PROJECT/dsp/pvoc/
-   cp $EURORACK/clouds/dsp/pvoc/*.cc $PROJECT/dsp/pvoc/
-
-   # Clouds resources
-   cp $EURORACK/clouds/resources.h $PROJECT/
-   cp $EURORACK/clouds/resources.cc $PROJECT/resources.cpp
-
-   # stmlib dependencies
-   cp $EURORACK/stmlib/stmlib.h $PROJECT/stmlib/
-   cp $EURORACK/stmlib/dsp/*.h $PROJECT/stmlib/dsp/
-   cp $EURORACK/stmlib/dsp/units.cc $PROJECT/stmlib/dsp/units.cpp
-   cp $EURORACK/stmlib/dsp/atan.cc $PROJECT/stmlib/dsp/atan.cpp
-   cp $EURORACK/stmlib/utils/*.h $PROJECT/stmlib/utils/
-   cp $EURORACK/stmlib/utils/random.cc $PROJECT/stmlib/utils/random.cpp
-   cp $EURORACK/stmlib/fft/* $PROJECT/stmlib/fft/
-   ```
-
-3. **Fix include paths** in resources.cpp:
-   ```bash
-   sed -i '' 's|#include "clouds/resources.h"|#include "resources.h"|g' resources.cpp
-   ```
-
-4. **Rename .cc files to .cpp** (the Daisy build system only handles .cpp):
-   ```bash
-   for f in dsp/*.cc dsp/pvoc/*.cc; do mv "$f" "${f%.cc}.cpp"; done
-   ```
+1. Download and install [VS Code](https://code.visualstudio.com)
+2. Open VS Code, go to the Extensions panel (Cmd+Shift+X on Mac)
+3. Search for **Claude** and install the Claude Code extension
+4. Sign in with your Anthropic account
 
 ---
 
-### Build
+### Step 2 — Install the ARM toolchain
+
+This is the compiler that turns C++ code into firmware for the Daisy.
+
+**Mac:**
+```bash
+brew install --cask gcc-arm-embedded
+```
+If you don't have Homebrew: [brew.sh](https://brew.sh)
+
+**Verify it worked:**
+```bash
+arm-none-eabi-gcc --version
+```
+You should see something like `arm-none-eabi-gcc 10.3.1`
+
+---
+
+### Step 3 — Install dfu-util (for flashing)
+
+**Mac:**
+```bash
+brew install dfu-util
+```
+
+---
+
+### Step 4 — Set up the Daisy libraries
+
+Create a folder for your Daisy projects and clone the required libraries:
 
 ```bash
-cd ~/Documents/Daisy/DaisyExamples/petal/cumuloid
+mkdir ~/Documents/Daisy
+cd ~/Documents/Daisy
+
+git clone https://github.com/electro-smith/DaisyExamples.git
+cd DaisyExamples
+git submodule update --init --recursive
+```
+
+Build the libraries (this takes a few minutes):
+```bash
+cd libDaisy && make && cd ..
+cd DaisySP && make && cd ..
+```
+
+---
+
+### Step 5 — Clone cumuloid
+
+```bash
+cd ~/Documents/Daisy
+mkdir Projects
+cd Projects
+git clone https://github.com/hfl1967/cumuloid.git
+cd cumuloid
+```
+
+---
+
+### Step 6 — Get the Mutable Instruments source files
+
+cumuloid uses the original Clouds DSP engine from the Mutable Instruments eurorack repository. These files are not included in this repo (to respect the original license structure) and must be fetched separately.
+
+```bash
+cd ~/Documents/Daisy
+git clone https://github.com/pichenettes/eurorack.git
+cd eurorack
+git submodule update --init --recursive
+```
+
+Then copy the required files into cumuloid:
+
+```bash
+EURORACK=~/Documents/Daisy/eurorack
+PROJECT=~/Documents/Daisy/Projects/cumuloid
+
+# Clouds DSP
+cp $EURORACK/clouds/dsp/*.h $PROJECT/dsp/
+cp $EURORACK/clouds/dsp/*.cc $PROJECT/dsp/
+cp $EURORACK/clouds/dsp/fx/*.h $PROJECT/dsp/fx/
+cp $EURORACK/clouds/dsp/pvoc/*.h $PROJECT/dsp/pvoc/
+cp $EURORACK/clouds/dsp/pvoc/*.cc $PROJECT/dsp/pvoc/
+
+# Resources
+cp $EURORACK/clouds/resources.h $PROJECT/
+cp $EURORACK/clouds/resources.cc $PROJECT/resources.cpp
+
+# stmlib
+cp $EURORACK/stmlib/stmlib.h $PROJECT/stmlib/
+cp $EURORACK/stmlib/dsp/*.h $PROJECT/stmlib/dsp/
+cp $EURORACK/stmlib/dsp/units.cc $PROJECT/stmlib/dsp/units.cpp
+cp $EURORACK/stmlib/dsp/atan.cc $PROJECT/stmlib/dsp/atan.cpp
+cp $EURORACK/stmlib/utils/*.h $PROJECT/stmlib/utils/
+cp $EURORACK/stmlib/utils/random.cc $PROJECT/stmlib/utils/random.cpp
+cp $EURORACK/stmlib/fft/* $PROJECT/stmlib/fft/
+```
+
+Fix the include path in resources.cpp:
+```bash
+cd $PROJECT
+sed -i '' 's|#include "clouds/resources.h"|#include "resources.h"|g' resources.cpp
+```
+
+Rename .cc files to .cpp (required by the Daisy build system):
+```bash
+for f in dsp/*.cc dsp/pvoc/*.cc; do mv "$f" "${f%.cc}.cpp"; done
+```
+
+---
+
+### Step 7 — Build
+
+Open VS Code, then **File → Open Folder** and navigate to your cumuloid folder.
+
+Open a terminal in VS Code (**Terminal → New Terminal**) and run:
+
+```bash
 make
 ```
 
-A successful build shows:
+A successful build ends with memory usage like this:
 ```
-FLASH:          0 GB       128 KB      0.00%
-SDRAM:        ~180 KB        64 MB
-QSPIFLASH:    ~163 KB      7936 KB      ~2%
+FLASH:       0 GB    128 KB    0.00%
+QSPIFLASH:  ~167 KB  7936 KB   ~2%
 ```
+
+Warnings about `unused-local-typedefs` from stmlib are normal and harmless.
 
 ---
 
-### Flash to Hardware
+### Step 8 — Install the Daisy bootloader (one time only)
 
-#### One-time: Install the Daisy Bootloader
+The Daisy needs a special bootloader installed once before it can receive firmware via USB. This only needs to be done once.
 
-This only needs to be done once per Daisy Seed. It enables QSPI flash programming via USB.
+**Put the Daisy in factory DFU mode:**
+1. Hold the **BOOT** button on the Daisy Seed (the small button on the module itself)
+2. While holding BOOT, press and release **RESET**
+3. Release BOOT
 
-1. Put Daisy in factory DFU mode: hold **BOOT** button, press/release **RESET**, release **BOOT**
-2. Flash the bootloader:
-   ```bash
-   dfu-util -a 0 -s 0x08000000:leave \
-     -D ../../libDaisy/core/dsy_bootloader_v6_2-intdfu-2000ms.bin \
-     -d ,0483:df11
-   ```
+**Flash the bootloader:**
+```bash
+dfu-util -a 0 -s 0x08000000:leave \
+  -D ../../DaisyExamples/libDaisy/core/dsy_bootloader_v6_2-intdfu-2000ms.bin \
+  -d ,0483:df11
+```
 
-#### Flash the cumuloid firmware
+A successful flash ends with `File downloaded successfully`.
 
-1. **Double-tap the RESET button** quickly — the LEDs will blink briefly to confirm bootloader mode
-2. Run:
-   ```bash
-   make program-dfu
-   ```
+---
 
-A successful flash shows:
+### Step 9 — Flash cumuloid
+
+**Put the Daisy in bootloader mode:**
+Double-tap the **RESET** button quickly. The LEDs will blink briefly to confirm.
+
+**Flash:**
+```bash
+make program-dfu
+```
+
+A successful flash ends with:
 ```
 Download done.
 File downloaded successfully
 Transitioning to dfuMANIFEST state
 ```
 
-The pedal boots automatically after flashing.
+The pedal reboots automatically. You should see the amber ring LED light up indicating Granular mode.
 
 ---
 
-## Project Structure
+### Troubleshooting
+
+**"No DFU capable USB device available"**
+The bootloader window is short. Try running `make program-dfu` first, then immediately double-tap RESET while it's waiting. Or try a different USB cable — some cables are power-only and won't work for flashing.
+
+**The double-tap isn't working**
+Try the BOOT+RESET method instead: hold BOOT, press/release RESET, release BOOT. Note this enters the factory bootloader (not the Daisy bootloader) and can only be used to reflash the bootloader itself, not cumuloid.
+
+**No sound**
+- Make sure S3 LED is lit (effect engaged, not bypassed)
+- Turn K4 (Density) away from noon in Granular mode — at noon no grains are generated
+- Turn K6 (Blend) clockwise for more wet signal
+
+---
+
+## Project structure
 
 ```
 cumuloid/
-├── cumuloid.cpp            # Main file — all hardware abstraction + audio callback
-├── Makefile                # Build config (APP_TYPE = BOOT_QSPI)
-├── resources.cpp           # Clouds lookup tables (from eurorack repo)
-├── resources.h             # Clouds resources header
-├── dsp/                    # Clouds DSP engine (from eurorack repo)
+├── cumuloid.cpp          # Main file — all hardware control + audio callback
+├── Makefile              # Build config
+├── resources.cpp/h       # Clouds lookup tables
+├── clouds -> .           # Symlink needed for include paths
+├── dsp/                  # Clouds DSP engine (from eurorack repo)
 │   ├── granular_processor.cpp/h
-│   ├── correlator.cpp/h
-│   ├── mu_law.cpp/h
 │   ├── parameters.h
-│   ├── frame.h
-│   ├── audio_buffer.h
-│   ├── grain.h
-│   ├── granular_sample_player.h
-│   ├── looping_sample_player.h
-│   ├── wsola_sample_player.h
-│   ├── sample_rate_converter.h
-│   ├── window.h
 │   ├── fx/
-│   │   ├── diffuser.h
-│   │   ├── fx_engine.h
-│   │   ├── pitch_shifter.h
-│   │   └── reverb.h
 │   └── pvoc/
-│       ├── frame_transformation.cpp/h
-│       ├── phase_vocoder.cpp/h
-│       └── stft.cpp/h
-└── stmlib/                 # stmlib support library (from eurorack repo)
-    ├── stmlib.h
+└── stmlib/               # stmlib support library (from eurorack repo)
     ├── dsp/
-    │   ├── units.cpp/h
-    │   ├── atan.cpp/h
-    │   ├── filter.h
-    │   ├── dsp.h
-    │   └── ...
     ├── fft/
-    │   └── shy_fft.h
     └── utils/
-        ├── random.cpp/h
-        └── ...
 ```
 
 ---
 
-## Technical Notes
+## Technical notes
 
-### Memory Layout
-The Daisy Seed has 128KB of internal flash, 64MB of SDRAM, and 8MB of QSPI flash. This project uses `APP_TYPE = BOOT_QSPI` which places the entire program in QSPI flash (accessed as memory-mapped storage at 0x90040000), leaving internal flash for the bootloader only.
+**Memory layout:** The Daisy Seed has 128KB internal flash, 64MB SDRAM, and 8MB QSPI flash. cumuloid uses `APP_TYPE = BOOT_QSPI` — the entire program lives in QSPI flash, leaving internal flash for the bootloader. Grain buffers (182KB) live in SDRAM.
 
-- **QSPI flash**: program code + Clouds lookup tables (~163KB)
-- **SDRAM**: grain buffers (118KB large + 64KB small = ~182KB)
+**Sample rate:** The Daisy runs at 32kHz to match Clouds' internal DSP rate. All Clouds timing calculations assume 32kHz.
 
-### Single Translation Unit Build
-Rather than fighting with the Daisy build system's handling of subdirectory `.cpp` files, all Clouds DSP sources are `#include`d directly into `cumuloid.cpp`. This is a standard embedded technique that also allows the compiler to optimize across all DSP code in a single pass.
+**Single translation unit build:** All Clouds DSP sources are `#include`d directly into `cumuloid.cpp`. This sidesteps Daisy build system limitations with subdirectory `.cpp` files and allows the compiler to optimize across all DSP code in one pass.
 
-### Clouds Internal Sample Rate
-Clouds runs its DSP internally at 32kHz (or 16kHz in lo-fi mode), with a built-in sample rate converter. The Daisy runs at 48kHz. The SRC in Clouds handles the conversion automatically.
+**Include path:** The `clouds -> .` symlink in the project root allows the Clouds DSP source files to resolve their own `#include "clouds/dsp/..."` paths correctly after being moved out of the eurorack repository structure.
+
+---
+
+## Credits
+
+The granular DSP engine is the work of **Émilie Gillet** (Mutable Instruments). See [CREDITS.md](CREDITS.md) for full attribution.
+
+The Daisy platform is the work of [Electro-Smith](https://electro-smith.com).
 
 ---
 
 ## License
 
-Clouds DSP engine: Copyright 2014 Émilie Gillet, licensed CC BY-SA 3.0
-cumuloid port: see LICENSE file
+See [LICENSE.md](LICENSE.md). The cumuloid port is released under CC BY-SA 3.0 to match the upstream Mutable Instruments license.
