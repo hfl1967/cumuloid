@@ -108,12 +108,9 @@ While holding the encoder, knobs control secondary parameters. The ring LEDs dim
 
 ---
 
-### Step 1 — Install VS Code and Claude Code
+### Step 1 — Install VS Code
 
 1. Download and install [VS Code](https://code.visualstudio.com)
-2. Open VS Code, go to the Extensions panel (Cmd+Shift+X on Mac)
-3. Search for **Claude** and install the Claude Code extension
-4. Sign in with your Anthropic account
 
 ---
 
