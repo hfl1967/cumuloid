@@ -272,7 +272,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // Pitch — S7 (microswitch 3) up = snap, down = smooth
     bool  pitch_snap = hw.switches[DaisyPetal::SW_7].Pressed();  // S7
     float pitch_knob = pitch_snap ? SnapPitch(raw_pitch) : raw_pitch;
-    params->pitch    = (pitch_knob - 0.5f) * 96.0f;  // -48 to +48 semitones
+    params->pitch    = fmaxf(-46.0f, fminf(46.0f, (pitch_knob - 0.5f) * 96.0f));  // ±46 semitones (2 inside hard limits)
 
     // K6 — Blend handled externally; Clouds internal mix always fully wet
     params->dry_wet = 1.0f;
