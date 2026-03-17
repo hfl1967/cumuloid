@@ -38,8 +38,8 @@ DaisyPetal hw;
 // ============================================================
 // Grain buffers — must live in SDRAM
 // ============================================================
-#define LARGE_BUFFER_SIZE (118784)
-#define SMALL_BUFFER_SIZE (65536)
+#define LARGE_BUFFER_SIZE (612000)
+#define SMALL_BUFFER_SIZE (512000)
 uint8_t DSY_SDRAM_BSS large_buffer[LARGE_BUFFER_SIZE];
 uint8_t DSY_SDRAM_BSS small_buffer[SMALL_BUFFER_SIZE];
 
