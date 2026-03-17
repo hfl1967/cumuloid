@@ -2,13 +2,7 @@
 
 A port of the Mutable Instruments Clouds granular audio processor to the Electro-Smith Daisy Petal guitar pedal platform.
 
-Clouds is a legendary granular synthesizer/processor originally designed for Eurorack modular synthesizers by Émilie Gillet. This port brings the full Clouds DSP engine to the Daisy Petal, a guitar pedal platform built around the STM32H750 microcontroller.
-
----
-
-## What it sounds like
-
-cumuloid continuously records incoming audio into a buffer and plays back overlapping fragments (grains) of that recording. The result ranges from subtle shimmer and reverb-like textures to dramatic pitch-shifted clouds of sound, time-stretched drones, and alien spectral processing. It works beautifully with guitar, synth, voice, or any audio source.
+Clouds is a legendary granular synthesizer/processor originally designed for Eurorack modular synthesizers by Émilie Gillet. This port brings the full Clouds DSP engine to the Daisy Petal, a guitar pedal platform built around the STM32H750 microcontroller. Because the Petal doesn't have CV in, and the control structure is different, certain stylistic decisions have to be made. 
 
 ---
 
@@ -104,7 +98,7 @@ While holding the encoder, knobs control secondary parameters. The ring LEDs dim
 - Mac or PC
 - USB cable (data cable, not charge-only)
 - [Visual Studio Code](https://code.visualstudio.com)
-- Basic comfort with a terminal/command line
+- Basic working knowldegde of the terminal/command line
 
 ---
 
