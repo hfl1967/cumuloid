@@ -90,15 +90,14 @@ bool     blink_state     = false;
 // ============================================================
 // Shift mode (encoder button held)
 // ============================================================
-bool shift_held = false;
+bool shift_mode = false;
 
 // Secondary parameter values (controlled in shift mode)
 float shift_reverb   = 0.3f;
 float shift_feedback = 0.0f;
 float shift_level    = 1.2f;
 float shift_dry      = 1.3f;
-float shift_hp_cutoff = 40.0f;  // Hz, start nearly flat
-float shift_lp_cutoff = 12000.0f;  // Hz, start open
+float shift_filter   = 0.5f;   // 0=full LP, 0.5=open, 1=full HP
 
 // Per-knob catch state for shift mode
 struct KnobCatch {
@@ -113,8 +112,7 @@ KnobCatch catch_k1 = {0.5f, 0.0f, false, true, 0.0f};  // reverb
 KnobCatch catch_k2 = {0.6f, 0.0f, false, true, 0.0f};  // feedback
 KnobCatch catch_k6 = {0.6f, 0.0f, false, true, 0.0f};  // level
 KnobCatch catch_k5 = {1.3f, 0.0f, false, true, 0.0f};  // dry level
-KnobCatch catch_k4 = {0.0f, 0.0f, false, true, 0.0f};  // hp cutoff
-KnobCatch catch_k3 = {1.0f, 0.0f, false, true, 0.0f};  // lp cutoff
+KnobCatch catch_k3 = {0.5f, 0.0f, false, true, 0.0f};  // filter (noon=open)
 
 // ============================================================
 // Pitch snap intervals
@@ -200,15 +198,16 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     Parameters* params = processor.mutable_parameters();
 
     // ----------------------------------------------------------
-    // Encoder — turn to change mode, hold for shift
+    // Encoder — mode cycle (unshifted only)
     // ----------------------------------------------------------
-    int enc_inc = hw.encoder.Increment();
-    if (enc_inc != 0) {
-        mode = (mode + enc_inc + PLAYBACK_MODE_LAST) % PLAYBACK_MODE_LAST;
-        processor.set_playback_mode(static_cast<PlaybackMode>(mode));
-        if (mode == 1) force_stretch_reset = true;
+    if (!shift_mode) {
+        int enc_inc = hw.encoder.Increment();
+        if (enc_inc != 0) {
+            mode = (mode + enc_inc + PLAYBACK_MODE_LAST) % PLAYBACK_MODE_LAST;
+            processor.set_playback_mode(static_cast<PlaybackMode>(mode));
+            if (mode == 1) force_stretch_reset = true;
+        }
     }
-    shift_held = hw.encoder.Pressed();
 
     // ----------------------------------------------------------
     // Read all knobs via initialized Parameter objects (K1-K6)
@@ -225,24 +224,42 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     float raw6      = p_blend.Process();     // K6
 
     // ----------------------------------------------------------
+    // Encoder — press to toggle shift (after knob reads so catch reset has fresh values)
+    // ----------------------------------------------------------
+    if (hw.encoder.RisingEdge()) {
+        shift_mode = !shift_mode;
+        if (shift_mode) {
+            // Entering shift — seed secondary values from current knob positions so they don't jump
+            catch_k1.secondary_value = raw1;
+            catch_k2.secondary_value = raw2;
+            catch_k3.secondary_value = raw3;
+            catch_k5.secondary_value = raw_pitch;
+            catch_k6.secondary_value = raw6;
+        }
+        // Reset catch state for all knobs on toggle
+        catch_k1.caught = false; catch_k1.primary_valid = false; catch_k1.primary_exit_raw = raw1;
+        catch_k2.caught = false; catch_k2.primary_valid = false; catch_k2.primary_exit_raw = raw2;
+        catch_k3.caught = false; catch_k3.primary_valid = false; catch_k3.primary_exit_raw = raw3;
+        catch_k5.caught = false; catch_k5.primary_valid = false; catch_k5.primary_exit_raw = raw_pitch;
+        catch_k6.caught = false; catch_k6.primary_valid = false; catch_k6.primary_exit_raw = raw6;
+    }
+
+    // ----------------------------------------------------------
     // Shift mode — secondary parameters with catch behavior
     // ----------------------------------------------------------
-    if (shift_held) {
+    if (shift_mode) {
         shift_reverb   = ProcessCatch(catch_k1, raw1, true);
         shift_feedback = ProcessCatch(catch_k2, raw2, true);
-        shift_level    = ProcessCatch(catch_k6, raw6, true);
+        shift_filter   = ProcessCatch(catch_k3, raw3, true);
+        // K4 unassigned in shift mode
         shift_dry      = ProcessCatch(catch_k5, raw_pitch, true);
-        float hp_raw   = ProcessCatch(catch_k4, raw4, true);
-        shift_hp_cutoff = 40.0f + hp_raw * 360.0f;  // 40-400Hz
-        float lp_raw   = ProcessCatch(catch_k3, raw3, true);
-        shift_lp_cutoff = 1000.0f + lp_raw * 11000.0f;  // 1k-12kHz
+        shift_level    = ProcessCatch(catch_k6, raw6, true);
     } else {
         ProcessCatch(catch_k1, raw1, false);
         ProcessCatch(catch_k2, raw2, false);
-        ProcessCatch(catch_k6, raw6, false);
-        ProcessCatch(catch_k5, raw_pitch, false);
-        ProcessCatch(catch_k4, raw4, false);
         ProcessCatch(catch_k3, raw3, false);
+        ProcessCatch(catch_k5, raw_pitch, false);
+        ProcessCatch(catch_k6, raw6, false);
     }
 
     // ----------------------------------------------------------
@@ -386,11 +403,36 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         }
     }
 
-    // Update HP filter cutoff
-    hp_filter.SetFreq(shift_hp_cutoff);
-    hp_filter.SetRes(0.5f);
-    lp_filter.SetFreq(shift_lp_cutoff);
-    lp_filter.SetRes(0.5f);
+    // K3 shift: noon = open, CCW = LP filter (dark), CW = HP filter (thin)
+    // Dead zone 0.45-0.55 = filters completely open
+    {
+        float fv = shift_filter;
+        if (fv < 0.45f) {
+            // CCW = LP filter, exponential curve
+            float t = 1.0f - (fv / 0.45f);  // 0 at noon, 1 at min
+            float t_exp = t * t;             // square for exponential feel
+            float lp_freq = 22000.0f - t_exp * 21500.0f;  // 22kHz to 500Hz
+            lp_filter.SetFreq(lp_freq);
+            lp_filter.SetRes(0.4f);
+            hp_filter.SetFreq(20.0f);
+            hp_filter.SetRes(0.5f);
+        } else if (fv > 0.55f) {
+            // CW = HP filter, exponential curve
+            float t = (fv - 0.55f) / 0.45f;  // 0 at noon, 1 at max
+            float t_exp = t * t;              // square for exponential feel
+            float hp_freq = 20.0f + t_exp * 5980.0f;  // 20Hz to 6kHz
+            hp_filter.SetFreq(hp_freq);
+            hp_filter.SetRes(0.4f);
+            lp_filter.SetFreq(22000.0f);
+            lp_filter.SetRes(0.5f);
+        } else {
+            // Dead zone — completely open
+            lp_filter.SetFreq(22000.0f);
+            lp_filter.SetRes(0.5f);
+            hp_filter.SetFreq(20.0f);
+            hp_filter.SetRes(0.5f);
+        }
+    }
 
     static const float kModeGain[4] = {1.1f, 1.2f, 2.0f, 1.2f};
 
@@ -511,21 +553,22 @@ int main(void)
                 blink_state = false;
         }
 
-        // Ring LEDs — mode color, blue tint when frozen, dim in shift
-        float dim = shift_held ? 0.3f : 1.0f;
-        for (int i = 0; i < 4; i++) {
-            RgbColor c = kModeColors[i];
-            if (i == mode) {
-                if (freeze) {
-                    c.r *= 0.3f;
-                    c.g *= 0.3f;
-                    c.b  = 1.0f;
-                }
-                hw.SetRingLed(static_cast<DaisyPetal::RingLed>(i),
-                              c.r * dim, c.g * dim, c.b * dim);
+        // Ring LEDs — dim white when shift active, otherwise mode color (blue tint when frozen)
+        for (int i = 0; i < 8; i++) {
+            if (shift_mode) {
+                hw.SetRingLed(static_cast<DaisyPetal::RingLed>(i), 0.3f, 0.3f, 0.3f);
             } else {
-                hw.SetRingLed(static_cast<DaisyPetal::RingLed>(i),
-                              0.03f * dim, 0.03f * dim, 0.03f * dim);
+                RgbColor c = kModeColors[i % 4];
+                if (i == mode) {
+                    if (freeze) {
+                        c.r *= 0.3f;
+                        c.g *= 0.3f;
+                        c.b  = 1.0f;
+                    }
+                    hw.SetRingLed(static_cast<DaisyPetal::RingLed>(i), c.r, c.g, c.b);
+                } else {
+                    hw.SetRingLed(static_cast<DaisyPetal::RingLed>(i), 0.03f, 0.03f, 0.03f);
+                }
             }
         }
 
