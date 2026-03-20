@@ -338,4 +338,4 @@ The Daisy platform is the work of [Electro-Smith](https://electro-smith.com).
 
 ## License
 
-See [LICENSE.md](LICENSE.md). The cumuloid port is released under CC BY-SA 3.0 to match the upstream Mutable Instruments license.
+See [LICENSE.md](LICENSE.md). The cumuloid port is released under MIT license to match the upstream Mutable Instruments license.
