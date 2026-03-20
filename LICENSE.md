@@ -4,11 +4,8 @@
 
 This port — all code in `cumuloid.cpp` and the project build system (`Makefile`,
 `STM32H750IB_flash.lds`) — is original work by the repository author and is
-released under the Creative Commons Attribution-ShareAlike 3.0 Unported License
-(CC BY-SA 3.0), to match the license of the upstream Mutable Instruments code
+released under the MIT license, to match the license of the upstream Mutable Instruments code
 it depends on.
-
-https://creativecommons.org/licenses/by-sa/3.0/
 
 ## Mutable Instruments Clouds DSP Engine
 
