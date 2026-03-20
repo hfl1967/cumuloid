@@ -93,8 +93,8 @@ bool     blink_state     = false;
 bool shift_held = false;
 
 // Secondary parameter values (controlled in shift mode)
-float shift_reverb   = 0.5f;
-float shift_feedback = 0.6f;
+float shift_reverb   = 0.3f;
+float shift_feedback = 0.0f;
 float shift_level    = 1.2f;
 float shift_dry      = 1.3f;
 float shift_hp_cutoff = 40.0f;  // Hz, start nearly flat
@@ -262,6 +262,17 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         } else {
             params->size = raw2;
         }
+    // Safety clamp: prevent zero-width grains at extreme pitch
+    params->size = fmaxf(0.05f, params->size);
+    // Hard limit: prevent grain scheduler overflow at high pitch + large size
+    // pitch > 12 semitones requires size reduction to prevent divide-by-zero
+    if (params->pitch > 12.0f) {
+        float scale = 12.0f / params->pitch;
+        params->size = fminf(params->size, 0.5f * scale);
+    } else if (params->pitch < -12.0f) {
+        float scale = -12.0f / params->pitch;
+        params->size = fminf(params->size, 0.5f * scale);
+    }
 
     // K3, K4 — Texture and Density (always active)
     params->texture = raw3;
@@ -272,7 +283,9 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // Pitch — S7 (microswitch 3) up = snap, down = smooth
     bool  pitch_snap = hw.switches[DaisyPetal::SW_7].Pressed();  // S7
     float pitch_knob = pitch_snap ? SnapPitch(raw_pitch) : raw_pitch;
-    params->pitch    = fmaxf(-46.0f, fminf(46.0f, (pitch_knob - 0.5f) * 96.0f));  // ±46 semitones (2 inside hard limits)
+    // Clamped to ±24 semitones — large pitch values combined with big buffer sizes
+    // cause the grain scheduler to walk past valid memory, producing loud noise bursts.
+    params->pitch    = fmaxf(-24.0f, fminf(24.0f, (pitch_knob - 0.5f) * 96.0f));
 
     // K6 — Blend handled externally; Clouds internal mix always fully wet
     params->dry_wet = 1.0f;
@@ -402,6 +415,10 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         // Soft clip wet signal
         wetl = tanhf(wetl * 0.6f) * 1.45f;
         wetr = tanhf(wetr * 0.6f) * 1.45f;
+
+        // Guard against NaN/inf from DSP instability
+        if (!isfinite(wetl)) wetl = 0.0f;
+        if (!isfinite(wetr)) wetr = 0.0f;
 
         // Manual dry/wet blend (raw6 clamped to guard against ADC noise at extremes)
         float blend = fclamp(raw6, 0.0f, 1.0f);
