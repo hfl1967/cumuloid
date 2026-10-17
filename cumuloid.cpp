@@ -98,6 +98,7 @@ float shift_feedback = 0.0f;
 float shift_level    = 1.2f;
 float shift_dry      = 1.3f;
 float shift_filter   = 0.5f;   // 0=full LP, 0.5=open, 1=full HP
+float shift_overlap  = 0.5f;   // grain overlap
 
 // Per-knob catch state for shift mode
 struct KnobCatch {
@@ -113,6 +114,7 @@ KnobCatch catch_k2 = {0.6f, 0.0f, false, true, 0.0f};  // feedback
 KnobCatch catch_k6 = {0.6f, 0.0f, false, true, 0.0f};  // level
 KnobCatch catch_k5 = {1.3f, 0.0f, false, true, 0.0f};  // dry level
 KnobCatch catch_k3 = {0.5f, 0.0f, false, true, 0.0f};  // filter (noon=open)
+KnobCatch catch_k4 = {0.5f, 0.0f, false, true, 0.0f};  // overlap
 
 // ============================================================
 // Pitch snap intervals
@@ -233,6 +235,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
             catch_k1.secondary_value = raw1;
             catch_k2.secondary_value = raw2;
             catch_k3.secondary_value = raw3;
+            catch_k4.secondary_value = raw4;
             catch_k5.secondary_value = raw_pitch;
             catch_k6.secondary_value = raw6;
         }
@@ -240,6 +243,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         catch_k1.caught = false; catch_k1.primary_valid = false; catch_k1.primary_exit_raw = raw1;
         catch_k2.caught = false; catch_k2.primary_valid = false; catch_k2.primary_exit_raw = raw2;
         catch_k3.caught = false; catch_k3.primary_valid = false; catch_k3.primary_exit_raw = raw3;
+        catch_k4.caught = false; catch_k4.primary_valid = false; catch_k4.primary_exit_raw = raw4;
         catch_k5.caught = false; catch_k5.primary_valid = false; catch_k5.primary_exit_raw = raw_pitch;
         catch_k6.caught = false; catch_k6.primary_valid = false; catch_k6.primary_exit_raw = raw6;
     }
@@ -251,13 +255,14 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         shift_reverb   = ProcessCatch(catch_k1, raw1, true);
         shift_feedback = ProcessCatch(catch_k2, raw2, true);
         shift_filter   = ProcessCatch(catch_k3, raw3, true);
-        // K4 unassigned in shift mode
+        shift_overlap  = ProcessCatch(catch_k4, raw4, true);
         shift_dry      = ProcessCatch(catch_k5, raw_pitch, true);
         shift_level    = ProcessCatch(catch_k6, raw6, true);
     } else {
         ProcessCatch(catch_k1, raw1, false);
         ProcessCatch(catch_k2, raw2, false);
         ProcessCatch(catch_k3, raw3, false);
+        ProcessCatch(catch_k4, raw4, false);
         ProcessCatch(catch_k5, raw_pitch, false);
         ProcessCatch(catch_k6, raw6, false);
     }
@@ -293,7 +298,9 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
 
     // K3, K4 — Texture and Density (always active)
     params->texture = raw3;
-    params->density = raw4;
+    if (!shift_mode) {
+        params->density = raw4;  // K4 controls overlap in shift mode
+    }
     params->gate    = true;          // always open — no physical gate input
     params->trigger = (mode == 1);  // trigger active in Stretch mode only
 
@@ -323,7 +330,7 @@ void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     // Up = randomized grain positions, Down = locked/deterministic
     deterministic_seed = hw.switches[DaisyPetal::SW_6].Pressed();  // S6
     params->granular.use_deterministic_seed = deterministic_seed;
-    params->granular.overlap = 0.5f;
+    params->granular.overlap = shift_overlap;
 
     // S5 (microswitch 1): stereo spread
     params->stereo_spread = hw.switches[DaisyPetal::SW_5].Pressed() ? 1.0f : 0.0f;  // S5
